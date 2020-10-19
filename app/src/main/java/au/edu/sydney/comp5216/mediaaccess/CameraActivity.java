@@ -25,7 +25,6 @@ import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
-
 import android.os.Bundle;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -35,19 +34,15 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.Toast;
-
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
-
-import com.bumptech.glide.load.model.ByteArrayLoader;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.OnProgressListener;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
-
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -60,15 +55,20 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Camera activity class that handles the camera interface, automated synchronisation,
+ * compressing and saving the image to the device.
+ */
 public class CameraActivity extends AppCompatActivity {
 
     private Button btnCapture;
     private TextureView textureView;
-    private ImageView imageView;
 
     // Orientation array to check state of orientation of output image
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
-    static{ //front camera rotation
+
+    //Rotation of the front camera
+    static {
         ORIENTATIONS.append(Surface.ROTATION_0,270);
         ORIENTATIONS.append(Surface.ROTATION_90,180);
         ORIENTATIONS.append(Surface.ROTATION_180,90);
@@ -92,86 +92,102 @@ public class CameraActivity extends AppCompatActivity {
     private ImageView ivPreview;
     private boolean imageTaken = false;
     private byte[] bytes;
-    byte[] compressed;
+    private byte[] compressed;
+    private Uri filePath;
 
     //Firebase
     FirebaseStorage storage;
     StorageReference storageReference;
 
-    private Uri filePath;
+    /**
+     * Handles the creation of the activity, and initialises Firebase.
+     * @param savedInstanceState
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.camera_view);
         textureView = (TextureView)findViewById(R.id.textureView);
-        assert textureView != null;
-        textureView.setSurfaceTextureListener(textureListener);
         btnCapture = (Button)findViewById(R.id.captureButton);
-        fileUriList = new ArrayList<>();
-        storage = FirebaseStorage.getInstance();
-        storageReference = storage.getReference();
         ivPreview = (ImageView) findViewById(R.id.imagePreview);
 
+        assert textureView != null;
+        textureView.setSurfaceTextureListener(textureListener);
+        fileUriList = new ArrayList<>();
+
+        //Firebase
+        storage = FirebaseStorage.getInstance();
+        storageReference = storage.getReference();
+
         btnCapture.setOnClickListener(new View.OnClickListener() {
+            /**
+             * Calls takePicture when "Capture" button is clicked.
+             * @param view
+             */
             @Override
             public void onClick(View view) {
                 takePicture();
                 if (imageTaken) {
                     btnCapture.setVisibility(View.INVISIBLE);
-                        textureView.setVisibility(View.INVISIBLE);
-//                        ivPreview.setImageBitmap(bitmapImage);
-//                        ivPreview.setVisibility(View.VISIBLE);
+                    textureView.setVisibility(View.INVISIBLE);
                 }
             }
         });
     }
 
-
+    /**
+     * Method to upload the taken photo as bytes to Firebase.
+     */
     private void uploadImage() {
 
-        if(bytes != null)
-        {
+        if(bytes != null) {
             final ProgressDialog progressDialog = new ProgressDialog(this);
             progressDialog.setTitle("Uploading...");
             progressDialog.show();
 
             StorageReference ref = storageReference.child("images/"+ UUID.randomUUID().toString());
             ref.putBytes(compressed).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
-                        @Override
-                        public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
-                            progressDialog.dismiss();
-                            Toast.makeText(CameraActivity.this, "Uploaded", Toast.LENGTH_SHORT).show();
-                        }
-                    })
-                    .addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            progressDialog.dismiss();
-                            Toast.makeText(CameraActivity.this, "Failed "+e.getMessage(), Toast.LENGTH_SHORT).show();
-                        }
-                    })
-                    .addOnProgressListener(new OnProgressListener<UploadTask.TaskSnapshot>() {
-                        @Override
-                        public void onProgress(UploadTask.TaskSnapshot taskSnapshot) {
-                            double progress = (100.0*taskSnapshot.getBytesTransferred()/taskSnapshot
-                                    .getTotalByteCount());
-                            progressDialog.setMessage("Uploaded "+(int)progress+"%");
-                        }
-                    });
+                @Override
+                public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                    progressDialog.dismiss();
+                    Toast.makeText(CameraActivity.this, "Uploaded", Toast.LENGTH_SHORT).show();
+                }
+            }).addOnFailureListener(new OnFailureListener() {
+                @Override
+                public void onFailure(@NonNull Exception e) {
+                    progressDialog.dismiss();
+                    Toast.makeText(CameraActivity.this, "Failed "+e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            }).addOnProgressListener(new OnProgressListener<UploadTask.TaskSnapshot>() {
+                @Override
+                public void onProgress(UploadTask.TaskSnapshot taskSnapshot) {
+                    double progress = (100.0*taskSnapshot.getBytesTransferred()/taskSnapshot
+                            .getTotalByteCount());
+                    progressDialog.setMessage("Uploaded "+(int)progress+"%");
+                }
+            });
         }
     }
 
+    /**
+     * Requests permission for use of camera.
+     * @param requestCode
+     * @param permissions
+     * @param grantResults
+     */
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if(requestCode == REQUEST_CAMERA_PERMISSION) {
-            if(grantResults[0] != PackageManager.PERMISSION_GRANTED)
-            {
+            if(grantResults[0] != PackageManager.PERMISSION_GRANTED) {
                 Toast.makeText(this, "You can't use camera without permission", Toast.LENGTH_SHORT).show();
                 finish();
             }
         }
     }
 
+    /**
+     * Resumes the activity.
+     */
     @Override
     protected void onResume() {
         super.onResume();
@@ -182,13 +198,16 @@ public class CameraActivity extends AppCompatActivity {
             textureView.setSurfaceTextureListener(textureListener);
     }
 
+    /**
+     * Pauses the activity.
+     */
     @Override
     protected void onPause() {
         stopBackgroundThread();
         super.onPause();
     }
 
-    //callback objects for receiving updates about the state of a camera device.
+    //Callback objects for receiving updates about the state of a camera device.
     CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
         @Override
         public void onOpened(@NonNull CameraDevice camera) {
@@ -216,7 +235,6 @@ public class CameraActivity extends AppCompatActivity {
 
         @Override
         public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int i, int i1) {
-
         }
 
         @Override
@@ -226,20 +244,22 @@ public class CameraActivity extends AppCompatActivity {
 
         @Override
         public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
-
         }
     };
 
+    /**
+     * Handles the usage of the device's camera.
+     */
     private void openCamera() {
         CameraManager manager = (CameraManager)getSystemService(Context.CAMERA_SERVICE);
-        try{
+        try {
             cameraId = manager.getCameraIdList()[1];
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             imageDimension = map.getOutputSizes(SurfaceTexture.class)[0];
+
             //Check realtime permission if run higher API 23
-            if(ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
-            {
+            if(ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this,new String[]{
                         Manifest.permission.CAMERA,
                         Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -252,8 +272,11 @@ public class CameraActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Create the preview of the image from the camera.
+     */
     private void createCameraPreview() {
-        try{
+        try {
             SurfaceTexture texture = textureView.getSurfaceTexture();
             assert  texture != null;
             texture.setDefaultBufferSize(imageDimension.getWidth(),imageDimension.getHeight());
@@ -266,7 +289,8 @@ public class CameraActivity extends AppCompatActivity {
                     if(cameraDevice == null)
                         return;
                     cameraCaptureSessions = cameraCaptureSession;
-                    updatePreview(); //display real-time preview
+                    //display real-time preview
+                    updatePreview();
                 }
 
                 @Override
@@ -279,31 +303,51 @@ public class CameraActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Update thes the preview of the image from the camera.
+     */
     private void updatePreview() {
-        if(cameraDevice == null)
+        if (cameraDevice == null)
             Toast.makeText(this, "Error", Toast.LENGTH_SHORT).show();
         captureRequestBuilder.set(CaptureRequest.CONTROL_MODE,CaptureRequest.CONTROL_MODE_AUTO);
-        try{
+        try {
             cameraCaptureSessions.setRepeatingRequest(captureRequestBuilder.build(),null,mBackgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
     }
 
-    //send back newly added Uri Lists
+    /**
+     * Closes the activity.
+     */
+    @Override
+    public void finish() {
+        Intent returnIntent = new Intent();
+        returnIntent.putExtra("passed_item", fileUriList);
+        // setResult(RESULT_OK);
+        setResult(RESULT_OK, returnIntent); //By not passing the intent in the result, the calling activity will get null data.
+        super.finish();
+    }
+
+    /**
+     * Sends the new URI to main activity.
+     * @param view
+     */
     public void onCameraBackClick(View view){
         Intent data = new Intent();
-        data.putExtra("fileUriList", fileUriList);
+        data.putExtra("images", fileUriList);
         setResult(RESULT_OK, data);
         finish();
     }
 
+    /**
+     * Handles the event of taking the picture, saving it to the device and compression.
+     */
     private void takePicture() {
-        if(cameraDevice == null)
+        if (cameraDevice == null)
             return;
         CameraManager manager = (CameraManager)getSystemService(Context.CAMERA_SERVICE);
-        try{
-
+        try {
             // setup output image format
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraDevice.getId());
             Size[] jpegSizes = null;
@@ -311,53 +355,59 @@ public class CameraActivity extends AppCompatActivity {
                 jpegSizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                         .getOutputSizes(ImageFormat.JPEG);
 
-            //Capture image with custom size
+            //Capture image with custom size if unavailable
             int width = 300;
             int height = 300;
-            if(jpegSizes != null && jpegSizes.length > 0)
-            {
+            if(jpegSizes != null && jpegSizes.length > 0) {
                 width = jpegSizes[0].getWidth();
                 height = jpegSizes[0].getHeight();
             }
 
-            //setup photo file path
+            //Setup photo file path to /DCIM/Camera/
             String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/DCIM/Camera/";
             file = new File(path+"/"+UUID.randomUUID().toString()+".jpg");
             filePath = Uri.parse(path+"/"+UUID.randomUUID().toString()+".jpg");
-            // setup Image reader
+
+            //Setup Image reader
             final ImageReader reader = ImageReader.newInstance(width,height,ImageFormat.JPEG,1);
             ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
+
+                /**
+                 * Handles the Image, converting it to bytes, bitmapImage,
+                 * handling the compression and saving to the device's local storage.
+                 * @param imageReader
+                 */
                 @Override
                 public void onImageAvailable(ImageReader imageReader) {
                     Image image = null;
-                    try{
+                    try {
                         image = reader.acquireLatestImage();
                         ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                         bytes = new byte[buffer.capacity()];
                         buffer.get(bytes);
-                        save(bytes);
                         bitmapImage = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, null);
                         bitmapImage = rotateBitmap(bitmapImage, 90);
-
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         bitmapImage.compress(Bitmap.CompressFormat.JPEG, 50, baos);
                         compressed = baos.toByteArray();
+                        save(compressed);
                         imageTaken = true;
                         uploadImage();
-
-                    } catch (FileNotFoundException e)
-                    {
+                    } catch (FileNotFoundException e) {
                         e.printStackTrace();
-                    } catch (IOException e)
-                    {
+                    } catch (IOException e) {
                         e.printStackTrace();
                     } finally {
-                        {
-                            if(image != null)
-                                image.close();
-                        }
+                        if(image != null)
+                            image.close();
                     }
                 }
+
+                /**
+                 * Saves the image as an OutputStream.
+                 * @param bytes
+                 * @throws IOException
+                 */
                 private void save(byte[] bytes) throws IOException {
                     OutputStream outputStream = null;
                     try{
@@ -370,46 +420,34 @@ public class CameraActivity extends AppCompatActivity {
                 }
             };
             reader.setOnImageAvailableListener(readerListener,mBackgroundHandler);
-//
-            // link Surface to Image reader
+
+            //Link Surface to Image reader
             List<Surface> outputSurface = new ArrayList<>(2);
             outputSurface.add(reader.getSurface());
             outputSurface.add(new Surface(textureView.getSurfaceTexture()));
 
-            // setup CaptureRequest Builder link output Surface(textureview) to CaptureRequest
+            //Setup CaptureRequest Builder link output Surface(textureView) to CaptureRequest
             final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             int rotation = getWindowManager().getDefaultDisplay().getRotation(); //get orientation base on device
             captureBuilder.addTarget(reader.getSurface());  //output target
             captureBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
             captureBuilder.set(CaptureRequest.JPEG_ORIENTATION,ORIENTATIONS.get(rotation));
 
-            //define CaptureCallback
+            //Define CaptureCallback
             final CameraCaptureSession.CaptureCallback captureListener = new CameraCaptureSession.CaptureCallback() {
                 @Override
                 public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) { //when capture() completed
                     super.onCaptureCompleted(session, request, result);
                     fileUriList.add(Uri.fromFile(file));
-                    Toast.makeText(CameraActivity.this, "Saved "+file, Toast.LENGTH_SHORT).show();
-
-
-                    //delay 1 seconds then recreate real-time preview
-                    Handler handler=new Handler();
-                    Runnable r=new Runnable() {
-                        public void run() {
-//                            createCameraPreview(); //recreate real-time preview
-//                             Load the taken image into a preview
-                        }
-                    };
-                    handler.postDelayed(r, 2000);
-
+                    Toast.makeText(CameraActivity.this, "Saved "+ file, Toast.LENGTH_SHORT).show();
                 }
             };
 
-            // create a CaptureSession to get CaptureRequest result image
+            //Create a CaptureSession to get CaptureRequest result image
             cameraDevice.createCaptureSession(outputSurface, new CameraCaptureSession.StateCallback() {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {//when configured, do capture()
-                    try{
+                    try {
                         cameraCaptureSession.capture(captureBuilder.build(),captureListener,mBackgroundHandler);
                     } catch (CameraAccessException e) {
                         e.printStackTrace();
@@ -418,23 +456,26 @@ public class CameraActivity extends AppCompatActivity {
 
                 @Override
                 public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
-
                 }
-
             },mBackgroundHandler);
-
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
     }
 
 
+    /**
+     * Starts a Thread in the background.
+     */
     private void startBackgroundThread() {
         mBackgroundThread = new HandlerThread("Camera Background");
         mBackgroundThread.start();
         mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
     }
 
+    /**
+     * Ends the Thread in the background.
+     */
     private void stopBackgroundThread() {
         mBackgroundThread.quitSafely();
         try{
@@ -446,12 +487,16 @@ public class CameraActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Method used for rotation of the taken image.
+     * @param source
+     * @param angle
+     * @return
+     */
     public static Bitmap rotateBitmap(Bitmap source, float angle) {
         Matrix matrix = new Matrix();
         matrix.postRotate(angle);
         matrix.postScale(-1, 1);
         return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
     }
-
 }
-
