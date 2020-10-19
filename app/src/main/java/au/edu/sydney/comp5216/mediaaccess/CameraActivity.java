@@ -92,6 +92,7 @@ public class CameraActivity extends AppCompatActivity {
     private ImageView ivPreview;
     private boolean imageTaken = false;
     private byte[] bytes;
+    byte[] compressed;
 
     //Firebase
     FirebaseStorage storage;
@@ -118,8 +119,8 @@ public class CameraActivity extends AppCompatActivity {
                 if (imageTaken) {
                     btnCapture.setVisibility(View.INVISIBLE);
                         textureView.setVisibility(View.INVISIBLE);
-                        ivPreview.setImageBitmap(bitmapImage);
-                        ivPreview.setVisibility(View.VISIBLE);
+//                        ivPreview.setImageBitmap(bitmapImage);
+//                        ivPreview.setVisibility(View.VISIBLE);
                 }
             }
         });
@@ -135,7 +136,7 @@ public class CameraActivity extends AppCompatActivity {
             progressDialog.show();
 
             StorageReference ref = storageReference.child("images/"+ UUID.randomUUID().toString());
-            ref.putBytes(bytes).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+            ref.putBytes(compressed).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
                         @Override
                         public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
                             progressDialog.dismiss();
@@ -337,17 +338,20 @@ public class CameraActivity extends AppCompatActivity {
                         save(bytes);
                         bitmapImage = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, null);
                         bitmapImage = rotateBitmap(bitmapImage, 90);
+
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        bitmapImage.compress(Bitmap.CompressFormat.JPEG, 50, baos);
+                        compressed = baos.toByteArray();
                         imageTaken = true;
-                    }
-                    catch (FileNotFoundException e)
+                        uploadImage();
+
+                    } catch (FileNotFoundException e)
                     {
                         e.printStackTrace();
-                    }
-                    catch (IOException e)
+                    } catch (IOException e)
                     {
                         e.printStackTrace();
-                    }
-                    finally {
+                    } finally {
                         {
                             if(image != null)
                                 image.close();
@@ -389,15 +393,14 @@ public class CameraActivity extends AppCompatActivity {
 
 
                     //delay 1 seconds then recreate real-time preview
-//                    Handler handler=new Handler();
-//                    Runnable r=new Runnable() {
-//                        public void run() {
+                    Handler handler=new Handler();
+                    Runnable r=new Runnable() {
+                        public void run() {
 //                            createCameraPreview(); //recreate real-time preview
-                            // Load the taken image into a preview
-//                        }
-//                    };
-//                    handler.postDelayed(r, 2000);
-                    uploadImage();
+//                             Load the taken image into a preview
+                        }
+                    };
+                    handler.postDelayed(r, 2000);
 
                 }
             };
